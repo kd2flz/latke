@@ -41,7 +41,6 @@
     gcc
     openssl
     openssl.dev
-    pkg-config
   ];
 
   # Shell hooks
@@ -69,5 +68,11 @@
   pre-commit.hooks = {
     rustfmt.enable = true;
     clippy.enable = true;
+  };
+
+  # Enable devenv integration
+  devenv = {
+    enable = true;
+    # Add any devenv-specific configuration here
   };
 } 

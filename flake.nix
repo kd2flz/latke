@@ -4,7 +4,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    devenv.url = "github:cachix/devenv";
+    devenv = {
+      url = "github:cachix/devenv";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs = {
@@ -25,6 +28,7 @@
       {
         devShells.default = devenv.lib.mkShell {
           inherit pkgs;
+          inputs = { inherit nixpkgs; };
           modules = [
             (import ./devenv.nix)
           ];
