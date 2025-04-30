@@ -1,0 +1,40 @@
+[package]
+name = "latke"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "A cross-platform desktop client for iBroadcast music service"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+# GTK and UI
+gtk = { version = "0.7", package = "gtk4", features = ["v4_6"] }
+adw = { version = "0.5", package = "libadwaita" }
+glib = "0.18"
+gio = "0.18"
+gdk = { version = "0.7", package = "gdk4" }
+gdk-pixbuf = "0.18"
+
+# Async runtime and networking
+tokio = { version = "1.36", features = ["full"] }
+reqwest = { version = "0.11", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Audio playback
+gstreamer = "0.20"
+gstreamer-app = "0.20"
+gstreamer-audio = "0.20"
+
+# Credentials management
+keyring = "2.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Utilities
+log = "0.4"
+env_logger = "0.10"
+async-trait = "0.1"
+futures = "0.3" 
