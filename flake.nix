@@ -8,21 +8,13 @@
       url = "github:cachix/devenv";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-        flake-utils.follows = "flake-utils";
-      };
-    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, devenv, rust-overlay }:
+  outputs = { self, nixpkgs, flake-utils, devenv }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs {
-          inherit system overlays;
+          inherit system;
         };
       in
       {
@@ -30,8 +22,11 @@
           inherit pkgs;
           inputs = { inherit nixpkgs; };
           modules = [
-            (import ./devenv.nix)
+            {
+              # Import your devenv configuration
+              imports = [ ./devenv.nix ];
+            }
           ];
         };
       });
-} 
+}
