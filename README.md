@@ -2,6 +2,9 @@
 
 A cross-platform desktop client for the iBroadcast music service, built with Rust and GTK 4.
 
+## IMPORTANT NOTE: 
+** 
+
 ## Features
 
 - Modern, responsive UI using GTK 4 and libadwaita

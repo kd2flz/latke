@@ -1,6 +1,6 @@
 use adw::prelude::*;
 use gtk::{Align, Button, Entry, Label, PasswordEntry};
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use crate::api::IBroadcastClient;
 
@@ -9,11 +9,11 @@ pub struct LoginWindow {
     email_entry: Entry,
     password_entry: PasswordEntry,
     login_button: Button,
-    client: Rc<IBroadcastClient>,
+    client: Arc<Mutex<IBroadcastClient>>,
 }
 
 impl LoginWindow {
-    pub fn new(client: Rc<IBroadcastClient>) -> Self {
+    pub fn new(client: Arc<Mutex<IBroadcastClient>>) -> Self {
         let window = adw::Window::new();
         window.set_title(Some("Latke - Login"));
         window.set_default_size(400, 300);
@@ -29,7 +29,7 @@ impl LoginWindow {
 
         let title = Label::builder()
             .label("Welcome to Latke")
-            .css_classes(&["title-1"])
+            .css_classes(vec!["title-1"])
             .build();
 
         let email_label = Label::builder()
@@ -52,7 +52,7 @@ impl LoginWindow {
 
         let login_button = Button::builder()
             .label("Login")
-            .css_classes(&["suggested-action"])
+            .css_classes(vec!["suggested-action"])
             .build();
 
         box_.append(&title);

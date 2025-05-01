@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 use thiserror::Error;
 use tokio::time::sleep;
+use std::pin::Pin;
+use std::future::Future;
 
 const API_BASE_URL: &str = "https://api.ibroadcast.com/s/JSON";
 const TOKEN_REFRESH_THRESHOLD: Duration = Duration::from_secs(300); // 5 minutes
@@ -24,6 +26,10 @@ pub enum IBroadcastError {
     Api(String),
     #[error("Invalid response format: {0}")]
     InvalidResponse(String),
+    #[error("Not logged in")]
+    NotLoggedIn,
+    #[error("HTTP error: {0}")]
+    Http(reqwest::StatusCode),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -103,7 +109,7 @@ impl IBroadcastClient {
     /// Makes an API request with retry logic
     async fn make_request<T: for<'de> Deserialize<'de>>(
         &mut self,
-        params: HashMap<&str, &str>,
+        params: HashMap<String, String>,
     ) -> Result<T, IBroadcastError> {
         self.check_rate_limit().await?;
         self.ensure_valid_token().await?;
@@ -123,7 +129,6 @@ impl IBroadcastClient {
                             IBroadcastError::InvalidResponse(format!("Failed to parse response: {}", e))
                         });
                     } else if response.status().as_u16() == 429 {
-                        // Rate limit hit
                         if retries < MAX_RETRIES {
                             retries += 1;
                             sleep(RETRY_DELAY * retries).await;
@@ -151,71 +156,62 @@ impl IBroadcastClient {
     }
 
     /// Authenticates with the iBroadcast API using email and password
-    pub async fn login(&mut self, email: &str, password: &str) -> Result<LoginResponse, IBroadcastError> {
+    pub async fn login(&mut self, email: &str, password: &str) -> Result<(), IBroadcastError> {
         let mut params = HashMap::new();
-        params.insert("mode", "login");
-        params.insert("email", email);
-        params.insert("password", password);
+        params.insert("mode".to_string(), "login".to_string());
+        params.insert("email".to_string(), email.to_string());
+        params.insert("password".to_string(), password.to_string());
 
         let response = self.make_request::<LoginResponse>(params).await?;
-
         if response.status == "OK" {
-            self.token = Some(response.token.clone());
-            self.user_id = Some(response.user_id.clone());
+            self.token = Some(response.token);
+            self.user_id = Some(response.user_id);
             if let Some(expires) = response.expires {
                 self.token_expires = Some(SystemTime::now() + Duration::from_secs(expires as u64));
             }
+            Ok(())
         } else {
-            return Err(IBroadcastError::Authentication(response.status));
+            Err(IBroadcastError::Authentication(response.status))
         }
-
-        Ok(response)
     }
 
-    /// Ensures the authentication token is valid and refreshes it if necessary
-    async fn ensure_valid_token(&mut self) -> Result<(), IBroadcastError> {
-        if let Some(expires) = self.token_expires {
-            if SystemTime::now() + TOKEN_REFRESH_THRESHOLD > expires {
-                let mut params = HashMap::new();
-                params.insert("mode", "refresh");
-                params.insert("token", self.token.as_ref().ok_or_else(|| {
-                    IBroadcastError::Authentication("No token available".to_string())
-                })?);
+    fn ensure_valid_token(&mut self) -> Pin<Box<dyn Future<Output = Result<(), IBroadcastError>> + '_>> {
+        Box::pin(async move {
+            if let Some(expires) = self.token_expires {
+                if SystemTime::now() + TOKEN_REFRESH_THRESHOLD > expires {
+                    let mut params = HashMap::new();
+                    params.insert("mode".to_string(), "refresh".to_string());
+                    params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.to_string());
 
-                let response = self.make_request::<LoginResponse>(params).await?;
-
-                if response.status == "OK" {
-                    self.token = Some(response.token);
-                    if let Some(expires) = response.expires {
-                        self.token_expires = Some(SystemTime::now() + Duration::from_secs(expires as u64));
+                    let response = self.make_request::<LoginResponse>(params).await?;
+                    if response.status == "OK" {
+                        self.token = Some(response.token);
+                        if let Some(expires) = response.expires {
+                            self.token_expires = Some(SystemTime::now() + Duration::from_secs(expires as u64));
+                        }
+                    } else {
+                        return Err(IBroadcastError::Authentication(response.status));
                     }
-                } else {
-                    return Err(IBroadcastError::Authentication(response.status));
                 }
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     /// Retrieves the user's music library
     pub async fn get_library(&mut self) -> Result<LibraryResponse, IBroadcastError> {
         let mut params = HashMap::new();
-        params.insert("mode", "getlibrary");
-        params.insert("token", self.token.as_ref().ok_or_else(|| {
-            IBroadcastError::Authentication("Not authenticated".to_string())
-        })?);
-
+        params.insert("mode".to_string(), "getlibrary".to_string());
+        params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.clone());
         self.make_request::<LibraryResponse>(params).await
     }
 
     /// Gets the stream URL for a specific track
     pub async fn get_stream_url(&mut self, track_id: &str) -> Result<PlaybackResponse, IBroadcastError> {
         let mut params = HashMap::new();
-        params.insert("mode", "stream");
-        params.insert("token", self.token.as_ref().ok_or_else(|| {
-            IBroadcastError::Authentication("Not authenticated".to_string())
-        })?);
-        params.insert("id", track_id);
+        params.insert("mode".to_string(), "stream".to_string());
+        params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.to_string());
+        params.insert("id".to_string(), track_id.to_string());
 
         self.make_request::<PlaybackResponse>(params).await
     }
@@ -223,61 +219,51 @@ impl IBroadcastClient {
     /// Searches the music library
     pub async fn search(&mut self, query: &str) -> Result<serde_json::Value, IBroadcastError> {
         let mut params = HashMap::new();
-        params.insert("mode", "search");
-        params.insert("token", self.token.as_ref().ok_or_else(|| {
-            IBroadcastError::Authentication("Not authenticated".to_string())
-        })?);
-        params.insert("query", query);
+        params.insert("mode".to_string(), "search".to_string());
+        params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.to_string());
+        params.insert("query".to_string(), query.to_string());
 
         self.make_request::<serde_json::Value>(params).await
     }
 
     /// Creates a new playlist
-    pub async fn create_playlist(&mut self, name: &str) -> Result<PlaylistResponse, IBroadcastError> {
+    pub async fn create_playlist(&mut self, name: &str) -> Result<(), IBroadcastError> {
         let mut params = HashMap::new();
-        params.insert("mode", "createplaylist");
-        params.insert("token", self.token.as_ref().ok_or_else(|| {
-            IBroadcastError::Authentication("Not authenticated".to_string())
-        })?);
-        params.insert("name", name);
-
-        self.make_request::<PlaylistResponse>(params).await
+        params.insert("mode".to_string(), "createplaylist".to_string());
+        params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.clone());
+        params.insert("name".to_string(), name.to_string());
+        self.make_request::<serde_json::Value>(params).await?;
+        Ok(())
     }
 
     /// Adds a track to a playlist
-    pub async fn add_to_playlist(&mut self, playlist_id: &str, track_id: &str) -> Result<serde_json::Value, IBroadcastError> {
+    pub async fn add_to_playlist(&mut self, playlist_id: &str, media_id: &str) -> Result<(), IBroadcastError> {
         let mut params = HashMap::new();
-        params.insert("mode", "addtoplaylist");
-        params.insert("token", self.token.as_ref().ok_or_else(|| {
-            IBroadcastError::Authentication("Not authenticated".to_string())
-        })?);
-        params.insert("playlist_id", playlist_id);
-        params.insert("track_id", track_id);
-
-        self.make_request::<serde_json::Value>(params).await
+        params.insert("mode".to_string(), "addtoplaylist".to_string());
+        params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.clone());
+        params.insert("playlist_id".to_string(), playlist_id.to_string());
+        params.insert("media_id".to_string(), media_id.to_string());
+        self.make_request::<serde_json::Value>(params).await?;
+        Ok(())
     }
 
     /// Removes a track from a playlist
-    pub async fn remove_from_playlist(&mut self, playlist_id: &str, track_id: &str) -> Result<serde_json::Value, IBroadcastError> {
+    pub async fn remove_from_playlist(&mut self, playlist_id: &str, media_id: &str) -> Result<(), IBroadcastError> {
         let mut params = HashMap::new();
-        params.insert("mode", "removefromplaylist");
-        params.insert("token", self.token.as_ref().ok_or_else(|| {
-            IBroadcastError::Authentication("Not authenticated".to_string())
-        })?);
-        params.insert("playlist_id", playlist_id);
-        params.insert("track_id", track_id);
-
-        self.make_request::<serde_json::Value>(params).await
+        params.insert("mode".to_string(), "removefromplaylist".to_string());
+        params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.clone());
+        params.insert("playlist_id".to_string(), playlist_id.to_string());
+        params.insert("media_id".to_string(), media_id.to_string());
+        self.make_request::<serde_json::Value>(params).await?;
+        Ok(())
     }
 
     /// Deletes a playlist
     pub async fn delete_playlist(&mut self, playlist_id: &str) -> Result<serde_json::Value, IBroadcastError> {
         let mut params = HashMap::new();
-        params.insert("mode", "deleteplaylist");
-        params.insert("token", self.token.as_ref().ok_or_else(|| {
-            IBroadcastError::Authentication("Not authenticated".to_string())
-        })?);
-        params.insert("playlist_id", playlist_id);
+        params.insert("mode".to_string(), "deleteplaylist".to_string());
+        params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.to_string());
+        params.insert("playlist_id".to_string(), playlist_id.to_string());
 
         self.make_request::<serde_json::Value>(params).await
     }
@@ -285,11 +271,32 @@ impl IBroadcastClient {
     /// Gets the current playback status
     pub async fn get_playback_status(&mut self) -> Result<serde_json::Value, IBroadcastError> {
         let mut params = HashMap::new();
-        params.insert("mode", "getplaybackstatus");
-        params.insert("token", self.token.as_ref().ok_or_else(|| {
-            IBroadcastError::Authentication("Not authenticated".to_string())
-        })?);
+        params.insert("mode".to_string(), "getplaybackstatus".to_string());
+        params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.to_string());
 
         self.make_request::<serde_json::Value>(params).await
+    }
+
+    pub async fn get_playback(&mut self) -> Result<PlaybackResponse, IBroadcastError> {
+        let mut params = HashMap::new();
+        params.insert("mode".to_string(), "getplayback".to_string());
+        params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.clone());
+        self.make_request::<PlaybackResponse>(params).await
+    }
+
+    pub async fn play(&mut self, media_id: &str) -> Result<(), IBroadcastError> {
+        let mut params = HashMap::new();
+        params.insert("mode".to_string(), "play".to_string());
+        params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.clone());
+        params.insert("media_id".to_string(), media_id.to_string());
+        self.make_request::<serde_json::Value>(params).await?;
+        Ok(())
+    }
+
+    pub async fn get_playlists(&mut self) -> Result<PlaylistResponse, IBroadcastError> {
+        let mut params = HashMap::new();
+        params.insert("mode".to_string(), "getplaylists".to_string());
+        params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.clone());
+        self.make_request::<PlaylistResponse>(params).await
     }
 } 

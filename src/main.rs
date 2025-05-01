@@ -2,7 +2,8 @@ use adw::prelude::*;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow};
 use log::{error, info};
-use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 mod api;
 mod ui;
@@ -20,7 +21,7 @@ fn main() {
 
     app.connect_activate(|app| {
         // Create the API client
-        let client = Rc::new(api::IBroadcastClient::new());
+        let client = Arc::new(Mutex::new(api::IBroadcastClient::new()));
 
         // Create the login window
         let login_window = ui::LoginWindow::new(client.clone());
@@ -32,15 +33,10 @@ fn main() {
             
             // Spawn a new task for the login attempt
             glib::spawn_future_local(async move {
-                match client.login(&email, &password).await {
-                    Ok(response) => {
-                        if response.status == "OK" {
-                            info!("Login successful for user: {}", email_clone);
-                            // TODO: Save credentials and show main window
-                        } else {
-                            error!("Login failed: {}", response.status);
-                            // TODO: Show error message to user
-                        }
+                match client.lock().unwrap().login(&email, &password).await {
+                    Ok(_) => {
+                        info!("Login successful for user: {}", email_clone);
+                        // TODO: Save credentials and show main window
                     }
                     Err(e) => {
                         error!("Login error: {}", e);
