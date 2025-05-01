@@ -5,6 +5,8 @@
   # https://devenv.sh/packages/
   packages = with pkgs; [
     gst_all_1.gstreamer
+    gst_all_1.gst-plugins-base.dev
+    gst_all_1.gst-plugins-good
     gtk4
     libadwaita
     openssl
