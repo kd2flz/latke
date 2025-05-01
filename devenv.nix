@@ -2,23 +2,23 @@
   languages.rust.enable = true;
 
   packages = with pkgs; [
-    # Core GStreamer
     gst_all_1.gstreamer
     gst_all_1.gst-plugins-base
-    gst_all_1.gst-plugins-base.dev  # Required for pkg-config files
     gst_all_1.gst-plugins-good
-    
-    # GUI dependencies
+    gst_all_1.gst-plugins-bad
+    gst_all_1.gst-plugins-ugly
+    gst_all_1.gst-libav
     gtk4
     libadwaita
     openssl
-    
-    # Essential build tools
-    pkg-config
   ];
 
-  # Add environment variables explicitly
   env.PKG_CONFIG_PATH = lib.makeSearchPathOutput "dev" "lib/pkgconfig" [
-    gst_all_1.gst-plugins-base
+    pkgs.gst_all_1.gstreamer
+    pkgs.gst_all_1.gst-plugins-base
+    pkgs.gst_all_1.gst-plugins-good
+    pkgs.gst_all_1.gst-plugins-bad
+    pkgs.gst_all_1.gst-plugins-ugly
+    pkgs.gst_all_1.gst-libav
   ];
 }
