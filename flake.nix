@@ -4,10 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    devenv = {
-      url = "github:cachix/devenv";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    devenv.url = "github:cachix/devenv";
   };
 
   outputs = { self, nixpkgs, flake-utils, devenv }:
@@ -25,6 +22,8 @@
             {
               # Import your devenv configuration
               imports = [ ./devenv.nix ];
+              # Set the current directory
+              env.DEVENV_ROOT = toString ./.;
             }
           ];
         };
