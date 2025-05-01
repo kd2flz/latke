@@ -11,6 +11,7 @@
     gtk4
     libadwaita
     openssl
+    pkg-config
   ];
 
   env.PKG_CONFIG_PATH = lib.makeSearchPathOutput "dev" "lib/pkgconfig" [
