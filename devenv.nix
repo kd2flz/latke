@@ -4,9 +4,10 @@
 
   # https://devenv.sh/packages/
   packages = with pkgs; [
-    gstreamer
+    gst_all_1.gstreamer
     gtk4
     libadwaita
+    openssl
   ];
 
   # See full reference at https://devenv.sh/reference/options/

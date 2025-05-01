@@ -22,8 +22,8 @@
             {
               # Import your devenv configuration
               imports = [ ./devenv.nix ];
-              # Set the current directory
-              env.DEVENV_ROOT = toString ./.;
+              # Add self reference
+              _module.args.self = self;
             }
           ];
         };
