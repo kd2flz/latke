@@ -25,6 +25,7 @@
     gst_all_1.gst-libav.out
     gst_all_1.gst-plugins-base.dev.out
     gst_all_1.gst-plugins-base.dev.dev
+    gst_all_1.gst-plugins-base.dev.lib
   ];
 
   env.PKG_CONFIG_PATH = lib.makeSearchPathOutput "dev" "lib/pkgconfig" [
@@ -36,6 +37,7 @@
     pkgs.gst_all_1.gst-libav.dev
     pkgs.gst_all_1.gst-plugins-base.dev.out
     pkgs.gst_all_1.gst-plugins-base.dev.dev
+    pkgs.gst_all_1.gst-plugins-base.dev.lib
     pkgs.gst_all_1.gst-plugins-base.out
     pkgs.gst_all_1.gst-plugins-good.out
     pkgs.gst_all_1.gst-plugins-bad.out

@@ -9,6 +9,7 @@ pub struct LoginWindow {
     email_entry: Entry,
     password_entry: PasswordEntry,
     login_button: Button,
+    #[allow(dead_code)]
     client: Arc<Mutex<IBroadcastClient>>,
 }
 
