@@ -1,17 +1,24 @@
 { pkgs, lib, config, ... }: {
-  # https://devenv.sh/languages/
   languages.rust.enable = true;
 
-  # https://devenv.sh/packages/
-packages = with pkgs; [
-  gst_all_1.gstreamer
-  gst_all_1.gst-plugins-base
-  gst_all_1.gst-plugins-good
-  gtk4
-  libadwaita
-  openssl
-];
+  packages = with pkgs; [
+    # Core GStreamer
+    gst_all_1.gstreamer
+    gst_all_1.gst-plugins-base
+    gst_all_1.gst-plugins-base.dev  # Required for pkg-config files
+    gst_all_1.gst-plugins-good
+    
+    # GUI dependencies
+    gtk4
+    libadwaita
+    openssl
+    
+    # Essential build tools
+    pkg-config
+  ];
 
-
-  # See full reference at https://devenv.sh/reference/options/
+  # Add environment variables explicitly
+  env.PKG_CONFIG_PATH = lib.makeSearchPathOutput "dev" "lib/pkgconfig" [
+    gst_all_1.gst-plugins-base
+  ];
 }
