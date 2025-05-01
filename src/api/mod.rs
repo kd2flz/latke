@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
@@ -28,8 +28,6 @@ pub enum IBroadcastError {
     InvalidResponse(String),
     #[error("Not logged in")]
     NotLoggedIn,
-    #[error("HTTP error: {0}")]
-    Http(reqwest::StatusCode),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -198,7 +196,7 @@ impl IBroadcastClient {
         })
     }
 
-    /// Retrieves the user's music library
+    #[allow(dead_code)]
     pub async fn get_library(&mut self) -> Result<LibraryResponse, IBroadcastError> {
         let mut params = HashMap::new();
         params.insert("mode".to_string(), "getlibrary".to_string());
@@ -206,7 +204,7 @@ impl IBroadcastClient {
         self.make_request::<LibraryResponse>(params).await
     }
 
-    /// Gets the stream URL for a specific track
+    #[allow(dead_code)]
     pub async fn get_stream_url(&mut self, track_id: &str) -> Result<PlaybackResponse, IBroadcastError> {
         let mut params = HashMap::new();
         params.insert("mode".to_string(), "stream".to_string());
@@ -216,7 +214,7 @@ impl IBroadcastClient {
         self.make_request::<PlaybackResponse>(params).await
     }
 
-    /// Searches the music library
+    #[allow(dead_code)]
     pub async fn search(&mut self, query: &str) -> Result<serde_json::Value, IBroadcastError> {
         let mut params = HashMap::new();
         params.insert("mode".to_string(), "search".to_string());
@@ -226,7 +224,7 @@ impl IBroadcastClient {
         self.make_request::<serde_json::Value>(params).await
     }
 
-    /// Creates a new playlist
+    #[allow(dead_code)]
     pub async fn create_playlist(&mut self, name: &str) -> Result<(), IBroadcastError> {
         let mut params = HashMap::new();
         params.insert("mode".to_string(), "createplaylist".to_string());
@@ -236,7 +234,7 @@ impl IBroadcastClient {
         Ok(())
     }
 
-    /// Adds a track to a playlist
+    #[allow(dead_code)]
     pub async fn add_to_playlist(&mut self, playlist_id: &str, media_id: &str) -> Result<(), IBroadcastError> {
         let mut params = HashMap::new();
         params.insert("mode".to_string(), "addtoplaylist".to_string());
@@ -247,7 +245,7 @@ impl IBroadcastClient {
         Ok(())
     }
 
-    /// Removes a track from a playlist
+    #[allow(dead_code)]
     pub async fn remove_from_playlist(&mut self, playlist_id: &str, media_id: &str) -> Result<(), IBroadcastError> {
         let mut params = HashMap::new();
         params.insert("mode".to_string(), "removefromplaylist".to_string());
@@ -258,7 +256,7 @@ impl IBroadcastClient {
         Ok(())
     }
 
-    /// Deletes a playlist
+    #[allow(dead_code)]
     pub async fn delete_playlist(&mut self, playlist_id: &str) -> Result<serde_json::Value, IBroadcastError> {
         let mut params = HashMap::new();
         params.insert("mode".to_string(), "deleteplaylist".to_string());
@@ -268,7 +266,7 @@ impl IBroadcastClient {
         self.make_request::<serde_json::Value>(params).await
     }
 
-    /// Gets the current playback status
+    #[allow(dead_code)]
     pub async fn get_playback_status(&mut self) -> Result<serde_json::Value, IBroadcastError> {
         let mut params = HashMap::new();
         params.insert("mode".to_string(), "getplaybackstatus".to_string());
@@ -277,6 +275,7 @@ impl IBroadcastClient {
         self.make_request::<serde_json::Value>(params).await
     }
 
+    #[allow(dead_code)]
     pub async fn get_playback(&mut self) -> Result<PlaybackResponse, IBroadcastError> {
         let mut params = HashMap::new();
         params.insert("mode".to_string(), "getplayback".to_string());
@@ -284,6 +283,7 @@ impl IBroadcastClient {
         self.make_request::<PlaybackResponse>(params).await
     }
 
+    #[allow(dead_code)]
     pub async fn play(&mut self, media_id: &str) -> Result<(), IBroadcastError> {
         let mut params = HashMap::new();
         params.insert("mode".to_string(), "play".to_string());
@@ -293,6 +293,7 @@ impl IBroadcastClient {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn get_playlists(&mut self) -> Result<PlaylistResponse, IBroadcastError> {
         let mut params = HashMap::new();
         params.insert("mode".to_string(), "getplaylists".to_string());

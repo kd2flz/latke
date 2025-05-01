@@ -1,5 +1,5 @@
 use adw::prelude::*;
-use gtk::{Align, Button, Entry, Label, PasswordEntry};
+use gtk::{Button, Entry, Label, PasswordEntry};
 use std::sync::{Arc, Mutex};
 
 use crate::api::IBroadcastClient;

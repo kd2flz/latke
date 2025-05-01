@@ -1,7 +1,8 @@
 use anyhow::Result;
 use keyring::Entry;
-use log::{error, info};
+use log::info;
 
+#[allow(dead_code)]
 pub fn save_credentials(service: &str, username: &str, password: &str) -> Result<()> {
     let entry = Entry::new(service, username)?;
     entry.set_password(password)?;
@@ -9,6 +10,7 @@ pub fn save_credentials(service: &str, username: &str, password: &str) -> Result
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn get_credentials(service: &str, username: &str) -> Result<String> {
     let entry = Entry::new(service, username)?;
     let password = entry.get_password()?;
@@ -16,6 +18,7 @@ pub fn get_credentials(service: &str, username: &str) -> Result<String> {
     Ok(password)
 }
 
+#[allow(dead_code)]
 pub fn delete_credentials(service: &str, username: &str) -> Result<()> {
     let entry = Entry::new(service, username)?;
     entry.delete_password()?;

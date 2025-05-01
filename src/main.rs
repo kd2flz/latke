@@ -1,9 +1,7 @@
 use adw::prelude::*;
-use gtk::prelude::*;
-use gtk::{Application, ApplicationWindow};
+use gtk::Application;
 use log::{error, info};
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 mod api;
 mod ui;
@@ -19,7 +17,7 @@ fn main() {
         .application_id("com.ibroadcast.latke")
         .build();
 
-    app.connect_activate(|app| {
+    app.connect_activate(|_app| {
         // Create the API client
         let client = Arc::new(Mutex::new(api::IBroadcastClient::new()));
 
