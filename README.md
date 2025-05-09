@@ -20,35 +20,24 @@ A cross-platform desktop client for the iBroadcast music service, built with Rus
 
 The project includes a Nix flake with a development environment that provides all necessary dependencies.
 
-1. Install Nix with Flakes support:
+1. Install Nix using the Determinate Nix Installer:
    ```bash
-   sh <(curl -L https://nixos.org/nix/install) --daemon
+   curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
    ```
 
-2. Enable flakes in your Nix configuration:
+2. Clone the repository:
    ```bash
-   mkdir -p ~/.config/nix
-   echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
-   ```
-
-3. Install devenv (optional but recommended):
-   ```bash
-   nix profile install github:cachix/devenv/latest
-   ```
-
-4. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/latke.git
+   git clone https://github.com/kd2flz/latke.git
    cd latke
    ```
 
-5. Enter the development environment:
+3. Enter the development environment:
    ```bash
    # With direnv (recommended)
    direnv allow
 
    # Or manually
-   nix develop
+   nix develop --no-pure-eval
    ```
 
 ### Manual Setup
