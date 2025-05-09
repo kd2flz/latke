@@ -22,7 +22,7 @@ The project includes a Nix flake with a development environment that provides al
 
 1. Install Nix using the Determinate Nix Installer:
    ```bash
-   curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
+   curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --determinate
    ```
 
 2. Clone the repository:
@@ -32,12 +32,15 @@ The project includes a Nix flake with a development environment that provides al
    ```
 
 3. Enter the development environment:
-   ```bash
-   # With direnv (recommended)
-   direnv allow
 
-   # Or manually
+   ##### Standard
+   ```bash
    nix develop --no-pure-eval
+   ```
+
+   ##### With direnv (if enabled)
+   ```bash
+   direnv allow
    ```
 
 ### Manual Setup
