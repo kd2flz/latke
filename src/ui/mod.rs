@@ -1,5 +1,5 @@
 use adw::prelude::*;
-use gtk::{Button, Entry, Label, PasswordEntry};
+use gtk::{Application, Button, Entry, Label, PasswordEntry};
 use std::sync::{Arc, Mutex};
 
 use crate::api::IBroadcastClient;
@@ -11,11 +11,14 @@ pub struct LoginWindow {
     login_button: Button,
     #[allow(dead_code)]
     client: Arc<Mutex<IBroadcastClient>>,
+    #[allow(dead_code)]
+    app: Application,
 }
 
 impl LoginWindow {
-    pub fn new(client: Arc<Mutex<IBroadcastClient>>) -> Self {
+    pub fn new(app: &Application, client: Arc<Mutex<IBroadcastClient>>) -> Self {
         let window = adw::Window::new();
+        window.set_application(Some(app));
         window.set_title(Some("Latke - Login"));
         window.set_default_size(400, 300);
 
@@ -71,6 +74,7 @@ impl LoginWindow {
             password_entry,
             login_button,
             client,
+            app: app.clone(),
         }
     }
 

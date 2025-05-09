@@ -32,10 +32,24 @@ pub enum IBroadcastError {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginResponse {
-    pub user_id: String,
-    pub token: String,
-    pub status: String,
+    pub message: String,
+    pub authenticated: bool,
+    pub result: bool,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub user: Option<UserInfo>,
+    #[serde(default)]
     pub expires: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserInfo {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -110,7 +124,11 @@ impl IBroadcastClient {
         params: HashMap<String, String>,
     ) -> Result<T, IBroadcastError> {
         self.check_rate_limit().await?;
-        self.ensure_valid_token().await?;
+        
+        // Skip token validation for login requests
+        if params.get("mode").map_or(false, |mode| mode != "login") {
+            self.ensure_valid_token().await?;
+        }
 
         let mut retries = 0;
         loop {
@@ -159,17 +177,50 @@ impl IBroadcastClient {
         params.insert("mode".to_string(), "login".to_string());
         params.insert("email".to_string(), email.to_string());
         params.insert("password".to_string(), password.to_string());
+        params.insert("app".to_string(), "Latke".to_string());
+        params.insert("version".to_string(), env!("CARGO_PKG_VERSION").to_string());
+        params.insert("device".to_string(), "desktop".to_string());
+        params.insert("client".to_string(), "Latke Desktop Client".to_string());
 
-        let response = self.make_request::<LoginResponse>(params).await?;
-        if response.status == "OK" {
-            self.token = Some(response.token);
-            self.user_id = Some(response.user_id);
-            if let Some(expires) = response.expires {
-                self.token_expires = Some(SystemTime::now() + Duration::from_secs(expires as u64));
+        // Log request parameters (excluding password)
+        let mut debug_params = params.clone();
+        debug_params.remove("password");
+        log::debug!("Login request parameters: {:?}", debug_params);
+
+        // Make the request and get the raw response first
+        let response = self
+            .client
+            .post(API_BASE_URL)
+            .form(&params)
+            .send()
+            .await?;
+
+        // Log response status and headers
+        log::debug!("Response status: {}", response.status());
+        log::debug!("Response headers: {:?}", response.headers());
+
+        // Log the response text for debugging
+        let response_text = response.text().await?;
+        log::debug!("Login response: {}", response_text);
+
+        // Parse the response
+        let response: LoginResponse = serde_json::from_str(&response_text).map_err(|e| {
+            IBroadcastError::InvalidResponse(format!("Failed to parse response: {}", e))
+        })?;
+
+        if response.authenticated && response.result {
+            if let Some(token) = response.token {
+                self.token = Some(token);
+                self.user_id = response.user.map(|u| u.id);
+                if let Some(expires) = response.expires {
+                    self.token_expires = Some(SystemTime::now() + Duration::from_secs(expires as u64));
+                }
+                Ok(())
+            } else {
+                Err(IBroadcastError::Authentication("No token received".to_string()))
             }
-            Ok(())
         } else {
-            Err(IBroadcastError::Authentication(response.status))
+            Err(IBroadcastError::Authentication(response.message))
         }
     }
 
@@ -182,17 +233,25 @@ impl IBroadcastClient {
                     params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.to_string());
 
                     let response = self.make_request::<LoginResponse>(params).await?;
-                    if response.status == "OK" {
-                        self.token = Some(response.token);
-                        if let Some(expires) = response.expires {
-                            self.token_expires = Some(SystemTime::now() + Duration::from_secs(expires as u64));
+                    if response.authenticated && response.result {
+                        if let Some(token) = response.token {
+                            self.token = Some(token);
+                            if let Some(expires) = response.expires {
+                                self.token_expires = Some(SystemTime::now() + Duration::from_secs(expires as u64));
+                            }
+                            Ok(())
+                        } else {
+                            Err(IBroadcastError::Authentication("No token received during refresh".to_string()))
                         }
                     } else {
-                        return Err(IBroadcastError::Authentication(response.status));
+                        Err(IBroadcastError::Authentication(response.message))
                     }
+                } else {
+                    Ok(())
                 }
+            } else {
+                Ok(())
             }
-            Ok(())
         })
     }
 

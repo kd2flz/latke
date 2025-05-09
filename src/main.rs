@@ -1,30 +1,36 @@
 use adw::prelude::*;
 use gtk::Application;
-use log::{error, info};
+use log::{error, info, debug};
 use std::sync::{Arc, Mutex};
 
 mod api;
 mod ui;
 mod utils;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     // Initialize logging
     env_logger::init();
     info!("Starting Latke...");
 
     // Create a new application
+    debug!("Creating GTK application...");
     let app = Application::builder()
         .application_id("com.ibroadcast.latke")
         .build();
 
-    app.connect_activate(|_app| {
+    debug!("Setting up application activation handler...");
+    app.connect_activate(|app| {
+        debug!("Application activated");
         // Create the API client
         let client = Arc::new(Mutex::new(api::IBroadcastClient::new()));
 
         // Create the login window
-        let login_window = ui::LoginWindow::new(client.clone());
+        debug!("Creating login window...");
+        let login_window = ui::LoginWindow::new(app, client.clone());
         
         // Handle login attempts
+        debug!("Setting up login handler...");
         login_window.connect_login(move |email, password| {
             let client = client.clone();
             let email_clone = email.clone();
@@ -45,9 +51,12 @@ fn main() {
         });
 
         // Show the login window
+        debug!("Showing login window...");
         login_window.show();
     });
 
     // Run the application
+    debug!("Starting GTK main loop...");
     app.run();
+    debug!("GTK main loop ended");
 } 
