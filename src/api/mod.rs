@@ -43,7 +43,7 @@ pub struct LoginResponse {
     pub expires: Option<i64>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UserInfo {
     pub id: String,
     #[serde(default)]
@@ -78,6 +78,22 @@ pub struct PlaylistResponse {
     pub status: String,
     pub playlist_id: String,
     pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceCodeResponse {
+    pub message: String,
+    pub result: bool,
+    #[serde(default)]
+    pub device_code: Option<String>,
+    #[serde(default)]
+    pub expires_in: Option<i64>,
+    #[serde(default)]
+    pub authenticated: bool,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub user: Option<UserInfo>,
 }
 
 pub struct IBroadcastClient {
@@ -358,5 +374,48 @@ impl IBroadcastClient {
         params.insert("mode".to_string(), "getplaylists".to_string());
         params.insert("token".to_string(), self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?.clone());
         self.make_request::<PlaylistResponse>(params).await
+    }
+
+    /// Initiates device code authentication flow
+    pub async fn get_device_code(&mut self) -> Result<DeviceCodeResponse, IBroadcastError> {
+        let response = reqwest::Client::new()
+            .post("https://api.ibroadcast.com/s/JSON/getDeviceCode")
+            .json(&serde_json::json!({
+                "app_id": "latke",
+                "app_version": env!("CARGO_PKG_VERSION"),
+                "device_name": "Latke Desktop Client"
+            }))
+            .send()
+            .await?
+            .json::<DeviceCodeResponse>()
+            .await?;
+
+        Ok(response)
+    }
+
+    /// Polls for device code authentication completion
+    pub async fn poll_device_code(&mut self, device_code: &str) -> Result<DeviceCodeResponse, IBroadcastError> {
+        let response = reqwest::Client::new()
+            .post("https://api.ibroadcast.com/s/JSON/pollDeviceCode")
+            .json(&serde_json::json!({
+                "app_id": "latke",
+                "app_version": env!("CARGO_PKG_VERSION"),
+                "device_code": device_code
+            }))
+            .send()
+            .await?
+            .json::<DeviceCodeResponse>()
+            .await?;
+
+        if response.authenticated && response.result {
+            if let Some(token) = response.token.clone() {
+                self.token = Some(token);
+                if let Some(user) = response.user.clone() {
+                    self.user_id = Some(user.id);
+                }
+            }
+        }
+
+        Ok(response)
     }
 } 

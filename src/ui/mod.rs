@@ -1,14 +1,19 @@
 use adw::prelude::*;
-use gtk::{Application, Button, Entry, Label, PasswordEntry};
+use gtk::{Application, Button, Label, Box as GtkBox, Spinner, Entry};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use glib::timeout_add_local;
+use glib::ControlFlow;
 
 use crate::api::IBroadcastClient;
 
+#[derive(Clone)]
 pub struct LoginWindow {
     window: adw::Window,
-    email_entry: Entry,
-    password_entry: PasswordEntry,
-    login_button: Button,
+    device_code_entry: Entry,
+    status_label: Label,
+    spinner: Spinner,
+    submit_button: Button,
     #[allow(dead_code)]
     client: Arc<Mutex<IBroadcastClient>>,
     #[allow(dead_code)]
@@ -22,7 +27,7 @@ impl LoginWindow {
         window.set_title(Some("Latke - Login"));
         window.set_default_size(400, 300);
 
-        let box_ = gtk::Box::builder()
+        let box_ = GtkBox::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(12)
             .margin_top(12)
@@ -36,43 +41,43 @@ impl LoginWindow {
             .css_classes(vec!["title-1"])
             .build();
 
-        let email_label = Label::builder()
-            .label("Email")
-            .xalign(0.0)
+        let instructions = Label::builder()
+            .label("Please enter the device code from your iBroadcast account settings:")
+            .wrap(true)
+            .wrap_mode(gtk::pango::WrapMode::Word)
             .build();
 
-        let email_entry = Entry::builder()
-            .placeholder_text("Enter your iBroadcast email")
+        let device_code_entry = Entry::builder()
+            .placeholder_text("Enter device code")
             .build();
 
-        let password_label = Label::builder()
-            .label("Password")
-            .xalign(0.0)
+        let status_label = Label::builder()
+            .label("")
             .build();
 
-        let password_entry = PasswordEntry::builder()
-            .placeholder_text("Enter your password")
+        let spinner = Spinner::builder()
+            .spinning(false)
             .build();
 
-        let login_button = Button::builder()
-            .label("Login")
-            .css_classes(vec!["suggested-action"])
+        let submit_button = Button::builder()
+            .label("Submit")
             .build();
 
         box_.append(&title);
-        box_.append(&email_label);
-        box_.append(&email_entry);
-        box_.append(&password_label);
-        box_.append(&password_entry);
-        box_.append(&login_button);
+        box_.append(&instructions);
+        box_.append(&device_code_entry);
+        box_.append(&status_label);
+        box_.append(&spinner);
+        box_.append(&submit_button);
 
         window.set_content(Some(&box_));
 
         Self {
             window,
-            email_entry,
-            password_entry,
-            login_button,
+            device_code_entry,
+            status_label,
+            spinner,
+            submit_button,
             client,
             app: app.clone(),
         }
@@ -84,16 +89,60 @@ impl LoginWindow {
 
     pub fn connect_login<F>(&self, callback: F)
     where
-        F: Fn(String, String) + 'static,
+        F: Fn() + 'static,
     {
-        let email_entry = self.email_entry.clone();
-        let password_entry = self.password_entry.clone();
-        let login_button = self.login_button.clone();
+        let client = self.client.clone();
+        let device_code_entry = self.device_code_entry.clone();
+        let status_label = self.status_label.clone();
+        let spinner = self.spinner.clone();
+        let submit_button = self.submit_button.clone();
+        let callback = std::sync::Arc::new(callback);
 
-        login_button.connect_clicked(move |_| {
-            let email = email_entry.text().to_string();
-            let password = password_entry.text().to_string();
-            callback(email, password);
+        let submit_button_clone = submit_button.clone();
+        submit_button.connect_clicked(move |_| {
+            let device_code = device_code_entry.text().to_string();
+            if device_code.is_empty() {
+                status_label.set_text("Please enter a device code");
+                return;
+            }
+
+            // Start spinner and disable input
+            spinner.set_spinning(true);
+            submit_button_clone.set_sensitive(false);
+            device_code_entry.set_sensitive(false);
+            status_label.set_text("Authenticating...");
+
+            let client = client.clone();
+            let device_code = device_code.clone();
+            let status_label = status_label.clone();
+            let spinner = spinner.clone();
+            let submit_button = submit_button_clone.clone();
+            let device_code_entry = device_code_entry.clone();
+            let callback = callback.clone();
+
+            glib::spawn_future_local(async move {
+                let mut client = client.lock().unwrap();
+                match client.poll_device_code(&device_code).await {
+                    Ok(response) => {
+                        if response.authenticated && response.result {
+                            status_label.set_text("Authentication successful!");
+                            spinner.set_spinning(false);
+                            callback();
+                        } else {
+                            status_label.set_text("Invalid device code. Please try again.");
+                            spinner.set_spinning(false);
+                            submit_button.set_sensitive(true);
+                            device_code_entry.set_sensitive(true);
+                        }
+                    }
+                    Err(e) => {
+                        status_label.set_text(&format!("Error: {}", e));
+                        spinner.set_spinning(false);
+                        submit_button.set_sensitive(true);
+                        device_code_entry.set_sensitive(true);
+                    }
+                }
+            });
         });
     }
 } 
