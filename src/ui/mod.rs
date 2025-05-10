@@ -42,7 +42,7 @@ impl LoginWindow {
             .build();
 
         let email_entry = Entry::builder()
-            .placeholder_text("Enter your email")
+            .placeholder_text("Enter your iBroadcast email")
             .build();
 
         let password_label = Label::builder()
