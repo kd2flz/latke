@@ -378,34 +378,49 @@ impl IBroadcastClient {
 
     /// Initiates device code authentication flow
     pub async fn get_device_code(&mut self) -> Result<DeviceCodeResponse, IBroadcastError> {
-        let response = reqwest::Client::new()
-            .post("https://api.ibroadcast.com/s/JSON/getDeviceCode")
-            .json(&serde_json::json!({
-                "app_id": "latke",
-                "app_version": env!("CARGO_PKG_VERSION"),
-                "device_name": "Latke Desktop Client"
-            }))
-            .send()
-            .await?
-            .json::<DeviceCodeResponse>()
-            .await?;
+        let mut params = HashMap::new();
+        params.insert("mode".to_string(), "getdevicecode".to_string());
+        params.insert("app".to_string(), "Latke".to_string());
+        params.insert("version".to_string(), env!("CARGO_PKG_VERSION").to_string());
+        params.insert("device".to_string(), "desktop".to_string());
+        params.insert("client".to_string(), "Latke Desktop Client".to_string());
 
-        Ok(response)
+        self.make_request::<DeviceCodeResponse>(params).await
     }
 
     /// Polls for device code authentication completion
     pub async fn poll_device_code(&mut self, device_code: &str) -> Result<DeviceCodeResponse, IBroadcastError> {
-        let response = reqwest::Client::new()
-            .post("https://api.ibroadcast.com/s/JSON/pollDeviceCode")
-            .json(&serde_json::json!({
-                "app_id": "latke",
-                "app_version": env!("CARGO_PKG_VERSION"),
-                "device_code": device_code
-            }))
+        let mut params = HashMap::new();
+        params.insert("mode".to_string(), "polldevicecode".to_string());
+        params.insert("device_code".to_string(), device_code.to_string());
+        params.insert("app".to_string(), "Latke".to_string());
+        params.insert("version".to_string(), env!("CARGO_PKG_VERSION").to_string());
+        params.insert("device".to_string(), "desktop".to_string());
+        params.insert("client".to_string(), "Latke Desktop Client".to_string());
+
+        // Log request parameters
+        log::debug!("Poll device code request parameters: {:?}", params);
+
+        // Make the request and get the raw response first
+        let response = self
+            .client
+            .post(API_BASE_URL)
+            .form(&params)
             .send()
-            .await?
-            .json::<DeviceCodeResponse>()
             .await?;
+
+        // Log response status and headers
+        log::debug!("Response status: {}", response.status());
+        log::debug!("Response headers: {:?}", response.headers());
+
+        // Log the response text for debugging
+        let response_text = response.text().await?;
+        log::debug!("Poll device code response: {}", response_text);
+
+        // Parse the response
+        let response: DeviceCodeResponse = serde_json::from_str(&response_text).map_err(|e| {
+            IBroadcastError::InvalidResponse(format!("Failed to parse response: {}", e))
+        })?;
 
         if response.authenticated && response.result {
             if let Some(token) = response.token.clone() {

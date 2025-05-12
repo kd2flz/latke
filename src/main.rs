@@ -8,9 +8,14 @@ mod ui;
 mod utils;
 
 fn main() {
-    // Initialize logging
+    // Initialize logging with debug level
+    std::env::set_var("RUST_LOG", "debug");
     env_logger::init();
     info!("Starting Latke...");
+
+    // Initialize Tokio runtime
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let _guard = runtime.enter();
 
     // Create GTK application
     let app = Application::builder()
