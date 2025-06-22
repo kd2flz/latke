@@ -1,13 +1,10 @@
 use anyhow::Result;
 use chrono::{Utc, Datelike};
-use futures::{SinkExt, StreamExt};
+use reqwest::blocking;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 use thiserror::Error;
-use tokio::sync::mpsc;
-use tokio::time::sleep;
-use tokio_tungstenite::{connect_async, tungstenite::{protocol::Message, Error as WsError}};
 
 const API_BASE_URL: &str = "https://api.ibroadcast.com/s/JSON";
 const DEVICE_AUTH_URL: &str = "https://api.ibroadcast.com/s/JSON/device";
@@ -24,8 +21,6 @@ pub enum IBroadcastError {
     RateLimitExceeded,
     #[error("Network error: {0}")]
     Network(String),
-    #[error("WebSocket error: {0}")]
-    WebSocket(#[from] WsError),
     #[error("API error: {0}")]
     Api(String),
     #[error("Invalid response format: {0}")]
@@ -176,7 +171,7 @@ pub struct WebSocketMessage {
 }
 
 pub struct IBroadcastClient {
-    client: reqwest::Client,
+    client: blocking::Client,
     token: Option<String>,
     user_id: Option<String>,
     device_name: String,
@@ -186,11 +181,6 @@ pub struct IBroadcastClient {
     last_request_time: SystemTime,
     token_expires: Option<SystemTime>,
     library: Option<LibraryResponse>,
-}
-
-#[derive(Clone)]
-pub struct QueueManager {
-    tx: mpsc::Sender<QueueCommand>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -203,26 +193,60 @@ pub struct TrackInfo {
     pub bitrate: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Album {
+    pub id: String,
+    pub title: String,
+    pub track_ids: Vec<u64>,
+    pub cover_id: Option<u64>,
+    pub is_various_artists: bool,
+    pub disc_number: u32,
+    pub total_discs: u32,
+    pub year: u32,
+    pub extra: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Playlist {
+    pub id: String,
+    pub title: String,
+    pub track_ids: Vec<u64>,
+    pub cover_id: Option<u64>,
+    pub is_smart: bool,
+    pub user_id: Option<u64>,
+    pub extra: Vec<serde_json::Value>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LibraryData {
+    #[serde(default)]
+    pub albums: HashMap<String, (String, Vec<u64>, u64, bool, u32, u32, u32, Vec<serde_json::Value>)>,
+    #[serde(default)]
+    pub playlists: HashMap<String, (String, Vec<u64>, u64, bool, u32, u32, u32, Vec<serde_json::Value>)>,
+    #[serde(default)]
     pub tracks: HashMap<String, TrackInfo>,
-    pub settings: Settings,
-    pub expires: i64,
+    #[serde(default)]
+    pub settings: Option<Settings>,
+    #[serde(default)]
+    pub expires: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LibraryResponse {
-    pub status: String,
-    #[serde(rename = "library")]
-    pub data: LibraryData,
-    pub playlists: serde_json::Value,
+    pub result: bool,
+    #[serde(default)]
+    pub library: Option<LibraryData>,
+    #[serde(default)]
+    pub status: Option<Status>,
+    #[serde(default)]
+    pub settings: Option<Settings>,
 }
 
 impl IBroadcastClient {
     /// Creates a new iBroadcast API client
     pub fn new() -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: blocking::Client::new(),
             token: None,
             user_id: None,
             device_name: String::from("desktop"),
@@ -266,65 +290,48 @@ impl IBroadcastClient {
     }
 
     /// Makes an API request with retry logic
-    async fn make_request<T: for<'de> Deserialize<'de>>(
+    fn make_request<T: for<'de> Deserialize<'de>>(
         &mut self,
         mut params: HashMap<String, serde_json::Value>,
     ) -> Result<T, IBroadcastError> {
-        self.check_rate_limit().await?;
-        
-        // Add common parameters as required by API
-        params.insert("client".to_string(), self.client_name.clone().into());
-        params.insert("device_name".to_string(), self.device_name.clone().into());
-        params.insert("version".to_string(), self.version.clone().into());
-        
-        if let Some(user_id) = &self.user_id {
-            params.insert("user_id".to_string(), user_id.clone().into());
-        }
-        if let Some(token) = &self.token {
-            params.insert("token".to_string(), token.clone().into());
-        }
-
         let mut retries = 0;
         loop {
             let endpoint = match params.get("mode").and_then(|v| v.as_str()) {
                 Some("library") => LIBRARY_URL,
                 _ => API_BASE_URL,
             };
-
             let response = self
                 .client
                 .post(endpoint)
                 .header("Content-Type", "application/json")
                 .json(&params)
-                .send()
-                .await?;
-
+                .send()?;
             match response.status() {
                 status if status.is_success() => {
-                    let api_response = response.json::<ApiResponse>().await
+                    if let Some("library") = params.get("mode").and_then(|v| v.as_str()) {
+                        return response.json::<T>()
+                            .map_err(|e| IBroadcastError::InvalidResponse(format!("Failed to parse response: {}", e)));
+                    }
+                    let api_response = response.json::<ApiResponse>()
                         .map_err(|e| IBroadcastError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
-
                     if !api_response.result {
                         return Err(IBroadcastError::Api(api_response.message));
                     }
-
-                    // Try to convert the ApiResponse into the requested type
                     let json_value = serde_json::to_value(&api_response)
                         .map_err(|e| IBroadcastError::InvalidResponse(format!("Failed to serialize response: {}", e)))?;
-                    
                     return serde_json::from_value(json_value)
                         .map_err(|e| IBroadcastError::InvalidResponse(format!("Failed to parse response into requested type: {}", e)));
                 }
                 status if status.as_u16() == 429 => {
                     if retries < 3 {
                         retries += 1;
-                        sleep(Duration::from_secs(1) * retries).await;
+                        std::thread::sleep(Duration::from_secs(1) * retries);
                         continue;
                     }
                     return Err(IBroadcastError::RateLimitExceeded);
                 }
                 _ => {
-                    let error = response.json::<ErrorResponse>().await.unwrap_or(ErrorResponse {
+                    let error = response.json::<ErrorResponse>().unwrap_or(ErrorResponse {
                         status: "error".to_string(),
                         message: "Unknown error".to_string(),
                     });
@@ -335,13 +342,14 @@ impl IBroadcastClient {
     }
 
     /// Authenticates with the iBroadcast API using email and password
-    pub async fn login(&mut self, email: &str, password: &str) -> Result<(), IBroadcastError> {
+    // Synchronous version
+    pub fn login(&mut self, email: &str, password: &str) -> Result<(), IBroadcastError> {
         let mut params = HashMap::new();
         params.insert("mode".to_string(), "status".into());
         params.insert("email_address".to_string(), email.into());
         params.insert("password".to_string(), password.into());
 
-        let response: ApiResponse = self.make_request(params).await?;
+        let response: ApiResponse = self.make_request(params)?;
 
         if response.authenticated {
             if let Some(user) = response.user {
@@ -357,10 +365,10 @@ impl IBroadcastClient {
     }
 
     /// Get library
-    pub async fn get_library(&mut self) -> Result<LibraryResponse, IBroadcastError> {
+    pub fn get_library(&mut self) -> Result<LibraryResponse, IBroadcastError> {
         let mut params = HashMap::new();
         params.insert("mode".to_string(), "library".into());
-        self.make_request(params).await
+        self.make_request(params)
     }
 
     /// Record playback after 10 seconds
@@ -381,7 +389,7 @@ impl IBroadcastClient {
         params.insert("mode".to_string(), "status".into());
         params.insert("history".to_string(), serde_json::to_value(history)?);
 
-        self.make_request::<ApiResponse>(params).await?;
+        self.make_request::<ApiResponse>(params)?;
         Ok(())
     }
 
@@ -404,7 +412,7 @@ impl IBroadcastClient {
         params.insert("mode".to_string(), "status".into());
         params.insert("history".to_string(), serde_json::to_value(history)?);
 
-        self.make_request::<ApiResponse>(params).await?;
+        self.make_request::<ApiResponse>(params)?;
         Ok(())
     }
 
@@ -412,12 +420,12 @@ impl IBroadcastClient {
     pub async fn get_stream_url(&mut self, track_id: &str) -> Result<String, IBroadcastError> {
         if let Some(library) = self.library.as_ref() {
             // Verify track exists
-            let _ = library.data.tracks.get(track_id)
+            let _ = library.library.as_ref().unwrap().tracks.get(track_id)
                 .ok_or_else(|| IBroadcastError::Api("Track not found".to_string()))?;
             
             let url = format!("{}?Expires={}&Signature={}&platform=desktop&version={}&user_id={}&file_id={}",
-                library.data.settings.streaming_server,
-                library.data.expires,
+                library.library.as_ref().unwrap().settings.as_ref().unwrap().streaming_server,
+                library.library.as_ref().unwrap().expires.unwrap_or_default(),
                 self.token.as_ref().ok_or(IBroadcastError::NotLoggedIn)?,
                 self.version,
                 self.user_id.as_ref().ok_or(IBroadcastError::NotLoggedIn)?,
@@ -439,7 +447,7 @@ impl IBroadcastClient {
         params.insert("device".to_string(), serde_json::json!("desktop"));
         params.insert("client".to_string(), serde_json::json!("Latke Desktop Client"));
 
-        self.make_request::<DeviceCodeResponse>(params).await
+        self.make_request::<DeviceCodeResponse>(params)
     }
 
     /// Polls for device code authentication completion
@@ -475,8 +483,7 @@ impl IBroadcastClient {
             .request(reqwest::Method::POST, url)
             .headers(headers)
             .json(&params)
-            .send()
-            .await?;
+            .send()?;
 
         log::debug!("=== API Response Details ===");
         log::debug!("Status: {}", response.status());
@@ -484,7 +491,7 @@ impl IBroadcastClient {
         for (name, value) in response.headers() {
             log::debug!("  {}: {}", name, value.to_str().unwrap_or("(invalid)"));
         }
-        let response_text = response.text().await?;
+        let response_text = response.text()?;
         log::debug!("Response Body: {}", response_text);
         log::debug!("=========================");
 
@@ -502,137 +509,5 @@ impl IBroadcastClient {
         }
 
         Ok(response)
-    }
-
-    /// Connects to the iBroadcast WebSocket server and returns a QueueManager
-    pub async fn connect_queue(&self) -> Result<QueueManager, IBroadcastError> {
-        let (tx, mut rx) = mpsc::channel::<QueueCommand>(32);
-        let user_id = self.user_id.clone()
-            .ok_or_else(|| IBroadcastError::NotLoggedIn)?;
-        let token = self.token.clone()
-            .ok_or_else(|| IBroadcastError::NotLoggedIn)?;
-
-        // Format WebSocket URL with auth params
-        let ws_url = format!(
-            "{}?user_id={}&token={}&client={}&device_name={}&version={}",
-            WEBSOCKET_URL,
-            user_id,
-            token,
-            self.client_name,
-            self.device_name,
-            self.version
-        );
-
-        // Connect to WebSocket
-        let url = url::Url::parse(&ws_url)
-            .map_err(|e| IBroadcastError::Api(format!("Invalid WebSocket URL: {}", e)))?;
-        
-        let (ws_stream, _) = connect_async(url).await
-            .map_err(|e| IBroadcastError::Api(format!("WebSocket connection failed: {}", e)))?;
-        let (write, mut read) = ws_stream.split();
-        
-        // Spawn task to handle incoming messages
-        let tx_clone = tx.clone();
-        tokio::spawn(async move {
-            while let Some(msg) = read.next().await {
-                match msg {
-                    Ok(Message::Text(text)) => {
-                        if let Ok(msg) = serde_json::from_str::<WebSocketMessage>(&text) {
-                            match msg.event.as_str() {
-                                "queue_update" => {
-                                    if let Ok(update) = serde_json::from_value::<QueueUpdate>(msg.data) {
-                                        // Handle queue update
-                                        log::debug!("Queue update received: {:?}", update);
-                                    }
-                                }
-                                _ => log::debug!("Unknown WebSocket event: {}", msg.event),
-                            }
-                        }
-                    }
-                    Ok(Message::Close(_)) => break,
-                    Err(e) => {
-                        log::error!("WebSocket error: {}", e);
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        });
-
-        // Spawn task to handle outgoing messages
-        let mut write = write;
-        tokio::spawn(async move {
-            while let Some(cmd) = rx.recv().await {
-                let msg = WebSocketMessage {
-                    event: cmd.command,
-                    data: serde_json::json!({
-                        "queue_id": cmd.queue_id,
-                        "track_id": cmd.track_id,
-                        "position": cmd.position,
-                    }),
-                };
-
-                if let Ok(text) = serde_json::to_string(&msg) {
-                    if let Err(e) = write.send(Message::Text(text)).await {
-                        log::error!("Failed to send WebSocket message: {}", e);
-                        break;
-                    }
-                }
-            }
-        });
-
-        Ok(QueueManager { tx: tx_clone })
-    }
-}
-
-impl QueueManager {
-    /// Play a track in the queue
-    pub async fn play(&self, queue_id: &str, track_id: &str) -> Result<(), IBroadcastError> {
-        self.tx.send(QueueCommand {
-            command: "play".to_string(),
-            queue_id: queue_id.to_string(),
-            track_id: Some(track_id.to_string()),
-            position: None,
-        }).await.map_err(|e| IBroadcastError::Api(format!("Failed to send play command: {}", e)))
-    }
-
-    /// Pause the current track
-    pub async fn pause(&self, queue_id: &str) -> Result<(), IBroadcastError> {
-        self.tx.send(QueueCommand {
-            command: "pause".to_string(),
-            queue_id: queue_id.to_string(),
-            track_id: None,
-            position: None,
-        }).await.map_err(|e| IBroadcastError::Api(format!("Failed to send pause command: {}", e)))
-    }
-
-    /// Skip to the next track
-    pub async fn next(&self, queue_id: &str) -> Result<(), IBroadcastError> {
-        self.tx.send(QueueCommand {
-            command: "next".to_string(),
-            queue_id: queue_id.to_string(),
-            track_id: None,
-            position: None,
-        }).await.map_err(|e| IBroadcastError::Api(format!("Failed to send next command: {}", e)))
-    }
-
-    /// Skip to the previous track
-    pub async fn previous(&self, queue_id: &str) -> Result<(), IBroadcastError> {
-        self.tx.send(QueueCommand {
-            command: "previous".to_string(),
-            queue_id: queue_id.to_string(),
-            track_id: None,
-            position: None,
-        }).await.map_err(|e| IBroadcastError::Api(format!("Failed to send previous command: {}", e)))
-    }
-
-    /// Seek to a position in the current track
-    pub async fn seek(&self, queue_id: &str, position: usize) -> Result<(), IBroadcastError> {
-        self.tx.send(QueueCommand {
-            command: "seek".to_string(),
-            queue_id: queue_id.to_string(),
-            track_id: None,
-            position: Some(position),
-        }).await.map_err(|e| IBroadcastError::Api(format!("Failed to send seek command: {}", e)))
     }
 }

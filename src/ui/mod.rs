@@ -87,6 +87,14 @@ impl LoginWindow {
         self.window.present();
     }
 
+    pub fn hide(&self) {
+        self.window.hide();
+    }
+
+    pub fn gtk_window(&self) -> &adw::Window {
+        &self.window
+    }
+
     pub fn connect_login<F>(&self, callback: F)
     where
         F: Fn() + 'static,
@@ -125,7 +133,7 @@ impl LoginWindow {
                 let device_name = get_hostname();
                 match client.poll_device_code(&device_code, &device_name).await {
                     Ok(response) => {
-                        if (response.result && response.user.as_ref().and_then(|u| u.token.as_ref()).is_some()) {
+                        if response.result && response.user.as_ref().and_then(|u| u.token.as_ref()).is_some() {
                             status_label.set_text("Authentication successful!");
                             spinner.set_spinning(false);
                             callback();
@@ -145,5 +153,51 @@ impl LoginWindow {
                 }
             });
         });
+    }
+}
+
+pub struct MainWindow {
+    window: adw::Window,
+    album_list: gtk::ListBox,
+    playlist_list: gtk::ListBox,
+}
+
+impl MainWindow {
+    pub fn new(app: &gtk::Application, albums: Vec<crate::api::Album>, playlists: Vec<crate::api::Playlist>) -> Self {
+        let window = adw::Window::new();
+        window.set_application(Some(app));
+        window.set_title(Some("Latke - Library"));
+        window.set_default_size(600, 400);
+
+        let vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        let album_label = gtk::Label::new(Some("Albums"));
+        let album_list = gtk::ListBox::new();
+        for album in &albums {
+            let row = gtk::Label::new(Some(&album.title));
+            album_list.append(&row);
+        }
+        vbox.append(&album_label);
+        vbox.append(&album_list);
+
+        let playlist_label = gtk::Label::new(Some("Playlists"));
+        let playlist_list = gtk::ListBox::new();
+        for playlist in &playlists {
+            let row = gtk::Label::new(Some(&playlist.title));
+            playlist_list.append(&row);
+        }
+        vbox.append(&playlist_label);
+        vbox.append(&playlist_list);
+
+        window.set_content(Some(&vbox));
+
+        Self { window, album_list, playlist_list }
+    }
+
+    pub fn show(&self) {
+        self.window.present();
+    }
+
+    pub fn gtk_window(&self) -> &adw::Window {
+        &self.window
     }
 }
