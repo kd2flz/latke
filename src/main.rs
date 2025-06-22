@@ -1,6 +1,6 @@
 use adw::prelude::*;
 use gtk::Application;
-use log::{info, debug};
+use log::info;
 use std::sync::{Arc, Mutex};
 
 mod api;

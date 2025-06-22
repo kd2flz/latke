@@ -1,0 +1,396 @@
+Developer Notes
+
+===================================================================================================================================================
+
+==================
+
+== API REQUESTS ==
+
+==================
+
+API requests are POST or GET requests of dataType "JSON" and contentType "application/json"
+
+The following members are required for all API requests (with the exception of a username & password login)
+
+{
+
+  "user_id": ,
+
+  "token": ,
+
+  "mode": ,
+
+  "client": ,
+
+  "device_name": ,
+
+  "version":
+
+}
+
+All responses contain the following members
+
+{
+
+  "result": ,
+
+  "message": ,
+
+  "settings": {
+
+    "artwork_server": ,
+
+    "streaming_server":
+
+  },
+
+  "status": {
+
+      "lastmodified": ,
+
+      "plays": ,
+
+      "available":
+
+  },
+
+  "authenticated": ,
+
+  "user": {
+
+    "id": ,
+
+    "email_address": ,
+
+    "token": ,
+
+    "session": {
+
+      "session_uuid":
+
+    }
+
+  }
+
+}
+
+If result is false, display to the end user.
+
+===============
+
+== API MODES ==
+
+===============
+
+Mode determines the function of the request.
+
+-- Login (email/password) --
+
+Note: user_id and token are not required for this request, use this request to obtain
+
+the user_id/token and use that for all future requests (once "logged in")
+
+Mode: "status"
+
+{
+
+  email_address: ,
+
+  password:
+
+}
+
+-- login (id/token) --
+
+Mode: "status"
+
+Additional fields are not required for a status request using id and token
+
+-- Logout --
+
+Mode: "logout"
+
+Additional fields are not required for a logout request
+
+-- Reset email --
+
+Send the user a reset email request.
+
+Mode: "reset_email"
+
+{
+
+  "type":"account"
+
+  "email_address": <email_address>
+
+}
+
+-- Library --
+
+Mode: "library"
+
+Additional fields are not required for a library request. This request should go to https://library.ibroadcast.com
+
+-- Logging playback history --
+
+After 10 seconds of playback, the following request should be made to the server.
+
+This should only happen once per playback.
+
+Mode: "status"
+
+{
+
+  history:
+
+}
+
+contains an array of days and plays with an array of tracks as follows:
+
+[{
+
+  day: ,
+
+  plays: {
+
+    [<track_id>]:  ,
+
+  }
+
+}]
+
+-- Logging skip history --
+
+Skips should logged and sent to the server using the following request
+
+Mode: "status"
+
+{
+
+  history:
+
+}
+
+contains an array of days and an detail object with an array of tracks containing an event and time as follows:
+
+[{
+
+  day: ,
+
+  detail: {
+
+    [<track_id>] {
+
+    "event": "skip",
+
+    "ts": ,
+
+    }
+
+  }
+
+}]
+
+===========
+
+== LOGIN ==
+
+===========
+
+Logging-in consists of a few steps:
+
+Authenticate the user
+
+Download the user library
+
+Connect to the Play Queue Server
+
+=============
+
+== LIBRARY ==
+
+=============
+
+Top level nodes returned in the library object:
+
+  "trash"
+
+  "artists"
+
+  "tracks"
+
+  "playlists"
+
+  "tags"
+
+Each object in the library response contains a object with the array index and what its value is (i.e. title, name)
+
+"library": {
+
+  "": {
+
+    "": [col1...],
+
+    "map": {
+
+      "": ,
+
+    }
+
+  },
+
+  "expires":
+
+}
+
+================
+
+== END POINTS ==
+
+================
+
+JSON API: https://api.ibroadcast.com/s/JSON/
+
+Play Queue Server (Web Socket): wss://queue.ibroadcast.com/ws
+
+Artwork: https://artwork.ibroadcast.com/artwork/<track_id>-<size in px (80, 150, 300)>
+
+Library: https://library.ibroadcast.com
+
+iBroadcast Logos: https://logo.ibroadcast.com
+
+Streaming Server: https://streaming.ibroadcast.com (and is also provided by the status.settings object)
+
+Generating a song URL for playback
+
+<streaming_server>?Expires=&Signature=&platform=&version=&user_id=<user_id>&file_id=<track_id>
+
+<streaming_server> URL is provided by the settings update object (settings.streaming_server)
+
+library.tracks[track_id][library.tracks.map.file]
+is provided by the library object (library.expires)
+
+User authentication token
+
+Platform id
+
+Platform version
+
+<user_id> User Id
+
+<track_id> library.tracks[track_id][library.tracks.map.id]
+
+================
+
+== PLAY QUEUE ==
+
+================
+
+The player updates its status through a WebSocket when a change is made and if there is an internet connection,
+
+the play queue server will then send the state of this "player" to other "controllers" if they are using the same
+
+session uuid.
+
+When the player starts up, get_state to resume its previous state
+
+{
+
+  session_uuid: <session_uuid>,
+
+  token: ,
+
+  user_id: <user_id>,
+
+  client: ,
+
+  version: ,
+
+  device_name: ,
+
+  local_addr: ,
+
+  command: "get_state"
+
+}
+
+When the user changes play state send a set_state request to the WebSocket
+
+{
+
+  session_uuid: <session_uuid>,
+
+  token: ,
+
+  user_id: <user_id>,
+
+  client: ,
+
+  version: ,
+
+  device_name: ,
+
+  local_addr: ,
+
+  command: "set_state",
+
+  value: {
+
+    "shuffle": false,
+
+    "volume": <0.0-1.0>,
+
+    "pause": ,
+
+    "tracks": <[int...]>,
+
+    "current_song": ,
+
+    "libary_last_modified": ,
+
+    "start_time": ,
+
+    "start_position": ,
+
+    "name": <User Chosen Device name like "Jim's Computer" or "Jane's Device">,
+
+  }
+
+}
+
+The WebSocket may also send requests to the "player" device.
+
+set_state
+
+  update local playback state with the new state received
+
+update_library
+
+  request and load a new library from the server.
+
+=========================
+
+== FUNCTIONALITY NOTES ==
+
+=========================
+
+· Record a play after 10 seconds into a track
+
+· Record a skip when the user skips a track
+
+· Authenticated in the status object must be checked in each response. If authenticated is false the user should be required to log in again.
+
+· Album artist id 0 means the album is Various Artists (more than one artist)
+
+· If the play button is pressed with no songs in the queue, then randomly select 500 from their library
+
+· Trashed files should be omitted from lists and display
+
+· Search should perform a simple wild-card search on Track name, Album name, Album artist name, and Track artist name
+
+===================================================================================================================================================
+
+  End Developer Notes
+
+===================================================================================================================================================

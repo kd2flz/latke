@@ -1,11 +1,11 @@
 use adw::prelude::*;
+use glib::spawn_future_local;
 use gtk::{Application, Button, Label, Box as GtkBox, Spinner, Entry};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use glib::timeout_add_local;
-use glib::ControlFlow;
 
 use crate::api::IBroadcastClient;
+mod hostname;
+use crate::ui::hostname::get_hostname;
 
 #[derive(Clone)]
 pub struct LoginWindow {
@@ -120,11 +120,12 @@ impl LoginWindow {
             let device_code_entry = device_code_entry.clone();
             let callback = callback.clone();
 
-            glib::spawn_future_local(async move {
+            spawn_future_local(async move {
                 let mut client = client.lock().unwrap();
-                match client.poll_device_code(&device_code).await {
+                let device_name = get_hostname();
+                match client.poll_device_code(&device_code, &device_name).await {
                     Ok(response) => {
-                        if response.authenticated && response.result {
+                        if (response.result && response.user.as_ref().and_then(|u| u.token.as_ref()).is_some()) {
                             status_label.set_text("Authentication successful!");
                             spinner.set_spinning(false);
                             callback();
@@ -145,4 +146,4 @@ impl LoginWindow {
             });
         });
     }
-} 
+}
